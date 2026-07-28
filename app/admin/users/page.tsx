@@ -1,0 +1,581 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { createClient } from "@/utils/supabase/client";
+import {
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  ShieldCheck,
+  User,
+  X,
+  Save,
+  Loader2,
+AlertTriangle,
+} from "lucide-react";
+import { toast } from "sonner";
+
+export default function UsersManagementPage() {
+  const supabase = createClient();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false); // 🌟 State ตอนกำลังกดบันทึก
+
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [userToDelete, setUserToDelete] = useState<any | null>(null);
+
+  // ดึงข้อมูล
+  const fetchEmployees = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error("Error fetching employees:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
+  const handleAddNew = () => {
+    setEditingUser(null);
+    setIsModalOpen(true);
+  };
+
+  const handleEdit = (user: any) => {
+    setEditingUser(user);
+    setIsModalOpen(true);
+  };
+
+  // 🌟 ฟังก์ชันบันทึกข้อมูล (เพิ่มใหม่ / แก้ไข)
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSaving(true);
+
+    const formData = new FormData(e.currentTarget);
+    const employeeData = {
+      first_name: formData.get("first_name") || null,
+      last_name: formData.get("last_name") || null,
+      nickname: formData.get("nickname") || null,
+      employee_code: formData.get("employee_code") || null,
+      email: formData.get("email") || null,
+      department: formData.get("department") || null,
+      position: formData.get("position") || null,
+      role: formData.get("role") || "Staff",
+      annual_leave_quota: Number(formData.get("annual_leave_quota")) || 0,
+      is_active: formData.get("is_active") === "on",
+    };
+
+    try {
+      if (editingUser) {
+        // เช็คว่าฐานข้อมูลพี่ใช้ id หรือ line_user_id เป็นตัวอ้างอิงหลัก
+        const pkColumn = editingUser.id ? "id" : "line_user_id";
+        const pkValue = editingUser.id || editingUser.line_user_id;
+
+        const { error } = await supabase
+          .from("employees")
+          .update(employeeData)
+          .eq(pkColumn, pkValue);
+        
+        if (error) throw error;
+        toast.success("แก้ไขข้อมูลพนักงานสำเร็จ!");
+      } else {
+        const { error } = await supabase
+          .from("employees")
+          .insert([employeeData]);
+          
+        if (error) throw error;
+        toast.success("เพิ่มพนักงานใหม่สำเร็จ!");
+      }
+
+      setIsModalOpen(false);
+      fetchEmployees();
+    } catch (error: any) {
+      console.error("Error saving employee:", error);
+      // เปลี่ยน error เป็น string เพื่อให้เห็นสาเหตุชัดๆ ในกรณีที่ส่งมาเป็น Object {}
+      const errorMsg = error?.message || JSON.stringify(error);
+      toast.error(`เกิดข้อผิดพลาด: ${errorMsg}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 🌟 ฟังก์ชันเตรียมลบ (เปิด Popup สวยๆ)
+  const handleDeleteClick = (user: any) => {
+    setUserToDelete(user);
+  };
+
+  // 🌟 ฟังก์ชันยืนยันการลบ
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+    try {
+      const pkColumn = userToDelete.id ? "id" : "line_user_id";
+      const pkValue = userToDelete.id || userToDelete.line_user_id;
+
+      const { error } = await supabase
+        .from("employees")
+        .delete()
+        .eq(pkColumn, pkValue);
+        
+      if (error) throw error;
+      toast.success("ลบข้อมูลพนักงานสำเร็จ!");
+      fetchEmployees();
+    } catch (error: any) {
+      console.error("Error deleting employee:", error);
+      const errorMsg = error?.message || JSON.stringify(error);
+      toast.error(`เกิดข้อผิดพลาดในการลบ: ${errorMsg}`);
+    } finally {
+      setUserToDelete(null); // ปิด Popup
+    }
+  };
+
+  // 🌟 ฟังก์ชันลบข้อมูลพนักงาน
+  const handleDelete = async (id: string, name: string) => {
+    if (
+      window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบพนักงาน "${name}" ออกจากระบบ?`)
+    ) {
+      try {
+        const { error } = await supabase
+          .from("employees")
+          .delete()
+          .eq("id", id);
+
+        if (error) throw error;
+        toast.success("ลบข้อมูลพนักงานสำเร็จ!");
+        fetchEmployees();
+      } catch (error: any) {
+        console.error("Error deleting employee:", error);
+        toast.error(
+          `เกิดข้อผิดพลาดในการลบ: ${error?.message || "ไม่สามารถลบข้อมูลได้"}`,
+        );
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">จัดการพนักงาน</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            เพิ่ม ลบ แก้ไข และกำหนดสิทธิ์การใช้งานของพนักงานในระบบ
+          </p>
+        </div>
+        <button
+          onClick={handleAddNew}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm shadow-blue-200 transition-all active:scale-95 flex items-center gap-2 w-fit"
+        >
+          <Plus size={18} />
+          เพิ่มพนักงานใหม่
+        </button>
+      </div>
+
+      {/* Table Card */}
+      <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+        {/* Toolbar */}
+        <div className="p-4 md:p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white z-10 relative">
+          <div className="relative w-full sm:w-80">
+            <Search
+              size={18}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              type="text"
+              placeholder="ค้นหาชื่อ, อีเมล หรือแผนก..."
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+            />
+          </div>
+          <div className="flex items-center gap-2 md:gap-3">
+            <select className="bg-gray-50 border border-gray-200 text-gray-700 text-xs md:text-sm rounded-xl px-3 py-2.5 outline-none focus:border-blue-500 font-medium cursor-pointer">
+              <option value="">ทุกแผนก</option>
+              <option value="IT">IT Support</option>
+              <option value="HR">HR</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[800px]">
+            <thead>
+              <tr className="bg-gray-50/80 text-gray-500 text-[11px] uppercase tracking-wider border-b border-gray-100">
+                <th className="px-6 py-4 font-bold">ชื่อพนักงาน</th>
+                <th className="px-6 py-4 font-bold">รหัสพนักงาน</th>
+                <th className="px-6 py-4 font-bold">แผนก / ตำแหน่ง</th>
+                <th className="px-6 py-4 font-bold">ระดับสิทธิ์</th>
+                <th className="px-6 py-4 font-bold">สถานะ</th>
+                <th className="px-6 py-4 font-bold text-right">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                <tr key="loading-row">
+                  <td
+                    colSpan={6}
+                    className="px-6 py-12 text-center text-gray-400"
+                  >
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                      <p className="text-sm font-medium">
+                        กำลังโหลดข้อมูลพนักงาน...
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : users.length === 0 ? (
+                <tr key="empty-row">
+                  <td
+                    colSpan={6}
+                    className="px-6 py-12 text-center text-gray-400 text-sm font-medium"
+                  >
+                    ไม่พบข้อมูลพนักงานในระบบ
+                  </td>
+                </tr>
+              ) : (
+                users.map((user) => (
+                  <tr
+                    key={user.id}
+                    className="hover:bg-blue-50/40 transition-colors group"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0 uppercase">
+                          {user.first_name ? user.first_name.charAt(0) : "?"}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">
+                            {user.first_name || ""} {user.last_name || ""}
+                            {user.nickname && (
+                              <span className="text-gray-500 font-normal ml-1">
+                                ({user.nickname})
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {user.email || "-"}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-sm text-gray-600 font-medium">
+                        {user.employee_code || "-"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-gray-700 font-medium">
+                        {user.department || "-"}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {user.position || "-"}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1.5">
+                        {user.role === "Admin" ? (
+                          <ShieldCheck size={16} className="text-indigo-500" />
+                        ) : (
+                          <User size={16} className="text-gray-400" />
+                        )}
+                        <span
+                          className={`text-sm font-medium ${user.role === "Admin" ? "text-indigo-600" : "text-gray-600"}`}
+                        >
+                          {user.role || "Staff"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {user.is_active ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                          ใช้งานปกติ
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500 border border-gray-200">
+                          ระงับการใช้งาน
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleEdit(user)}
+                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        {/* 🌟 ปุ่มลบพนักงาน */}
+                        <button 
+                          onClick={() => handleDeleteClick(user)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        <div className="p-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-sm text-gray-500 bg-gray-50/30">
+          <span className="font-medium">
+            จำนวนพนักงานทั้งหมด {users.length} รายการ
+          </span>
+        </div>
+      </div>
+
+      {/* 🌟 Slide-over Modal สำหรับฟอร์มพนักงาน (เปลี่ยนเป็น <form>) */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[70] flex justify-end">
+          <div
+            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300"
+            onClick={() => !isSaving && setIsModalOpen(false)}
+          />
+
+          {/* 🌟 ครอบด้วย <form> เพื่อใช้งาน onSubmit */}
+          <form
+            onSubmit={handleSave}
+            className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300"
+          >
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {editingUser ? "แก้ไขข้อมูลพนักงาน" : "เพิ่มพนักงานใหม่"}
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {editingUser
+                    ? `กำลังแก้ไขข้อมูลของ ${editingUser.first_name}`
+                    : "ระบบจะรอให้พนักงานผูกบัญชี LINE ในภายหลัง"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            {/* 🌟 เติมแอตทริบิวต์ name="..." ให้ทุก <input> ตรงกับชื่อคอลัมน์ใน Database */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                    ชื่อจริง <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    required
+                    name="first_name"
+                    type="text"
+                    defaultValue={editingUser?.first_name || ""}
+                    placeholder="ชื่อ"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                    นามสกุล <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    required
+                    name="last_name"
+                    type="text"
+                    defaultValue={editingUser?.last_name || ""}
+                    placeholder="นามสกุล"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                    ชื่อเล่น
+                  </label>
+                  <input
+                    name="nickname"
+                    type="text"
+                    defaultValue={editingUser?.nickname || ""}
+                    placeholder="ชื่อเล่น"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                    รหัสพนักงาน
+                  </label>
+                  <input
+                    name="employee_code"
+                    type="text"
+                    defaultValue={editingUser?.employee_code || ""}
+                    placeholder="EMP-001"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                  อีเมล (Email)
+                </label>
+                <input
+                  name="email"
+                  type="email"
+                  defaultValue={editingUser?.email || ""}
+                  placeholder="example@stplus.com"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                    แผนก
+                  </label>
+                  <input
+                    name="department"
+                    type="text"
+                    defaultValue={editingUser?.department || ""}
+                    placeholder="ระบุแผนก"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                    ตำแหน่ง
+                  </label>
+                  <input
+                    name="position"
+                    type="text"
+                    defaultValue={editingUser?.position || ""}
+                    placeholder="ระบุตำแหน่ง"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                  สิทธิ์การใช้งาน (Role)
+                </label>
+                <select
+                  name="role"
+                  defaultValue={editingUser?.role || "Staff"}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                >
+                  <option value="Staff">พนักงานทั่วไป (Staff)</option>
+                  <option value="Manager">ผู้จัดการ (Manager)</option>
+                  <option value="Admin">ผู้ดูแลระบบ (Admin)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 mb-1.5 block">
+                  โควตาวันลาพักร้อน (วัน/ปี)
+                </label>
+                <input
+                  name="annual_leave_quota"
+                  type="number"
+                  defaultValue={editingUser?.annual_leave_quota ?? 6}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                />
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className="relative">
+                    <input
+                      name="is_active"
+                      type="checkbox"
+                      className="sr-only peer"
+                      defaultChecked={
+                        editingUser ? editingUser.is_active : true
+                      }
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">
+                    สถานะ: ใช้งานปกติ (Active)
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-100 bg-gray-50/50 shrink-0 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="flex-1 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+
+              {/* 🌟 ปุ่มบันทึก (เปลี่ยน type เป็น submit) */}
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200 flex items-center justify-center gap-2 disabled:opacity-70"
+              >
+                {isSaving ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <Save size={18} />
+                )}
+                {editingUser ? "บันทึกการแก้ไข" : "เพิ่มพนักงาน"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 🌟 Popup ยืนยันการลบ (Beautiful Modal) */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center">
+          <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity" onClick={() => setUserToDelete(null)} />
+          <div className="relative bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm mx-4 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
+                <AlertTriangle size={28} strokeWidth={2.5} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">ยืนยันการลบพนักงาน</h3>
+              <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                คุณแน่ใจหรือไม่ว่าต้องการลบ <span className="font-bold text-gray-900">{userToDelete.first_name} {userToDelete.last_name}</span> ออกจากระบบ? <br/> การกระทำนี้ไม่สามารถย้อนกลับได้
+              </p>
+              <div className="flex w-full gap-3">
+                <button 
+                  onClick={() => setUserToDelete(null)}
+                  className="flex-1 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-xl text-sm font-bold transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow-sm shadow-red-200 transition-colors"
+                >
+                  ใช่, ลบเลย
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
