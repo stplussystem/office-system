@@ -409,7 +409,7 @@ export default function UsersManagementPage() {
                             disabled={
                               processingId === (user.id || user.line_user_id)
                             }
-                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold disabled:opacity-50"
+                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 cursor-pointer"
                           >
                             {processingId === (user.id || user.line_user_id) ? (
                               <Loader2 size={14} className="animate-spin" />
@@ -421,7 +421,7 @@ export default function UsersManagementPage() {
                         ) : (
                           <button
                             onClick={() => handleEdit(user)}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                           >
                             <Edit size={18} />
                           </button>
@@ -429,7 +429,7 @@ export default function UsersManagementPage() {
 
                         <button
                           onClick={() => handleDeleteClick(user)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         >
                           <Trash2 size={18} />
                         </button>
@@ -476,7 +476,7 @@ export default function UsersManagementPage() {
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
