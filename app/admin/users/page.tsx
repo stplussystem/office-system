@@ -12,7 +12,10 @@ import {
   X,
   Save,
   Loader2,
-AlertTriangle,
+  AlertTriangle,
+  UserCheck,
+  Users,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,7 +24,13 @@ export default function UsersManagementPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false); // 🌟 State ตอนกำลังกดบันทึก
+  const [isSaving, setIsSaving] = useState(false);
+
+  // 🌟 เพิ่ม State สำหรับ Tab และการค้นหา
+  const [activeTab, setActiveTab] = useState<"pending" | "active">("active");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [userToDelete, setUserToDelete] = useState<any | null>(null);
@@ -31,7 +40,7 @@ export default function UsersManagementPage() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from("employees")
+        .from("employees") // อิงจากตาราง employees ที่พี่ใช้
         .select("*")
         .order("created_at", { ascending: false });
 
@@ -39,6 +48,7 @@ export default function UsersManagementPage() {
       setUsers(data || []);
     } catch (error) {
       console.error("Error fetching employees:", error);
+      toast.error("ไม่สามารถดึงข้อมูลพนักงานได้");
     } finally {
       setLoading(false);
     }
@@ -58,7 +68,38 @@ export default function UsersManagementPage() {
     setIsModalOpen(true);
   };
 
-  // 🌟 ฟังก์ชันบันทึกข้อมูล (เพิ่มใหม่ / แก้ไข)
+  // 🌟 ฟังก์ชันอนุมัติพนักงานที่ล็อกอินผ่าน LINE เข้ามาใหม่
+  const handleApprove = async (user: any) => {
+    setProcessingId(user.id || user.line_user_id);
+    try {
+      const pkColumn = user.id ? "id" : "line_user_id";
+      const pkValue = user.id || user.line_user_id;
+
+      const { error } = await supabase
+        .from("employees")
+        .update({
+          is_active: true,
+          role: "Staff",
+        })
+        .eq(pkColumn, pkValue);
+
+      if (error) throw error;
+      toast.success("อนุมัติพนักงานสำเร็จ!");
+
+      // ให้เปิดฟอร์มแก้ไขต่อเลย เผื่อแอดมินอยากใส่รหัสพนักงาน หรือแผนก
+      setEditingUser({ ...user, is_active: true, role: "Staff" });
+      setIsModalOpen(true);
+
+      fetchEmployees();
+    } catch (error: any) {
+      console.error("Error approving:", error);
+      toast.error(`เกิดข้อผิดพลาด: ${error?.message}`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ฟังก์ชันบันทึกข้อมูล (เพิ่มใหม่ / แก้ไข)
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSaving(true);
@@ -79,7 +120,6 @@ export default function UsersManagementPage() {
 
     try {
       if (editingUser) {
-        // เช็คว่าฐานข้อมูลพี่ใช้ id หรือ line_user_id เป็นตัวอ้างอิงหลัก
         const pkColumn = editingUser.id ? "id" : "line_user_id";
         const pkValue = editingUser.id || editingUser.line_user_id;
 
@@ -87,14 +127,14 @@ export default function UsersManagementPage() {
           .from("employees")
           .update(employeeData)
           .eq(pkColumn, pkValue);
-        
+
         if (error) throw error;
         toast.success("แก้ไขข้อมูลพนักงานสำเร็จ!");
       } else {
         const { error } = await supabase
           .from("employees")
           .insert([employeeData]);
-          
+
         if (error) throw error;
         toast.success("เพิ่มพนักงานใหม่สำเร็จ!");
       }
@@ -103,20 +143,16 @@ export default function UsersManagementPage() {
       fetchEmployees();
     } catch (error: any) {
       console.error("Error saving employee:", error);
-      // เปลี่ยน error เป็น string เพื่อให้เห็นสาเหตุชัดๆ ในกรณีที่ส่งมาเป็น Object {}
-      const errorMsg = error?.message || JSON.stringify(error);
-      toast.error(`เกิดข้อผิดพลาด: ${errorMsg}`);
+      toast.error(`เกิดข้อผิดพลาด: ${error?.message}`);
     } finally {
       setIsSaving(false);
     }
   };
 
-  // 🌟 ฟังก์ชันเตรียมลบ (เปิด Popup สวยๆ)
   const handleDeleteClick = (user: any) => {
     setUserToDelete(user);
   };
 
-  // 🌟 ฟังก์ชันยืนยันการลบ
   const confirmDelete = async () => {
     if (!userToDelete) return;
     try {
@@ -127,41 +163,40 @@ export default function UsersManagementPage() {
         .from("employees")
         .delete()
         .eq(pkColumn, pkValue);
-        
+
       if (error) throw error;
       toast.success("ลบข้อมูลพนักงานสำเร็จ!");
       fetchEmployees();
     } catch (error: any) {
       console.error("Error deleting employee:", error);
-      const errorMsg = error?.message || JSON.stringify(error);
-      toast.error(`เกิดข้อผิดพลาดในการลบ: ${errorMsg}`);
+      toast.error(`เกิดข้อผิดพลาดในการลบ: ${error?.message}`);
     } finally {
-      setUserToDelete(null); // ปิด Popup
+      setUserToDelete(null);
     }
   };
 
-  // 🌟 ฟังก์ชันลบข้อมูลพนักงาน
-  const handleDelete = async (id: string, name: string) => {
-    if (
-      window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบพนักงาน "${name}" ออกจากระบบ?`)
-    ) {
-      try {
-        const { error } = await supabase
-          .from("employees")
-          .delete()
-          .eq("id", id);
+  // 🌟 กรองข้อมูลตาม Tab และ Search
+  const filteredUsers = users.filter((u) => {
+    const matchesTab =
+      activeTab === "pending" ? u.is_active === false : u.is_active === true;
 
-        if (error) throw error;
-        toast.success("ลบข้อมูลพนักงานสำเร็จ!");
-        fetchEmployees();
-      } catch (error: any) {
-        console.error("Error deleting employee:", error);
-        toast.error(
-          `เกิดข้อผิดพลาดในการลบ: ${error?.message || "ไม่สามารถลบข้อมูลได้"}`,
-        );
-      }
-    }
-  };
+    const searchLower = searchQuery.toLowerCase();
+    const fullName = `${u.first_name || ""} ${u.last_name || ""}`.toLowerCase();
+    const displayName = (u.display_name || "").toLowerCase();
+
+    const matchesSearch =
+      fullName.includes(searchLower) ||
+      displayName.includes(searchLower) ||
+      (u.nickname && u.nickname.toLowerCase().includes(searchLower)) ||
+      (u.email && u.email.toLowerCase().includes(searchLower));
+
+    const matchesDept =
+      departmentFilter === "" || u.department === departmentFilter;
+
+    return matchesTab && matchesSearch && matchesDept;
+  });
+
+  const pendingCount = users.filter((u) => u.is_active === false).length;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
@@ -182,6 +217,35 @@ export default function UsersManagementPage() {
         </button>
       </div>
 
+      {/* 🌟 Tabs ควบคุม */}
+      <div className="flex bg-white p-1 rounded-xl w-full sm:w-80 shadow-sm border border-gray-100">
+        <button
+          onClick={() => setActiveTab("active")}
+          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
+            activeTab === "active"
+              ? "bg-blue-50 text-blue-600"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Users size={16} /> อนุมัติแล้ว
+        </button>
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
+            activeTab === "pending"
+              ? "bg-orange-50 text-orange-600"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          รออนุมัติ
+          {pendingCount > 0 && (
+            <span className="bg-orange-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+              {pendingCount}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Table Card */}
       <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden flex flex-col">
         {/* Toolbar */}
@@ -193,14 +257,20 @@ export default function UsersManagementPage() {
             />
             <input
               type="text"
-              placeholder="ค้นหาชื่อ, อีเมล หรือแผนก..."
+              placeholder="ค้นหาชื่อ, อีเมล หรือชื่อ LINE..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
             />
           </div>
           <div className="flex items-center gap-2 md:gap-3">
-            <select className="bg-gray-50 border border-gray-200 text-gray-700 text-xs md:text-sm rounded-xl px-3 py-2.5 outline-none focus:border-blue-500 font-medium cursor-pointer">
+            <select
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className="bg-gray-50 border border-gray-200 text-gray-700 text-xs md:text-sm rounded-xl px-3 py-2.5 outline-none focus:border-blue-500 font-medium cursor-pointer"
+            >
               <option value="">ทุกแผนก</option>
-              <option value="IT">IT Support</option>
+              <option value="IT Support">IT Support</option>
               <option value="HR">HR</option>
             </select>
           </div>
@@ -211,11 +281,10 @@ export default function UsersManagementPage() {
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-gray-50/80 text-gray-500 text-[11px] uppercase tracking-wider border-b border-gray-100">
-                <th className="px-6 py-4 font-bold">ชื่อพนักงาน</th>
+                <th className="px-6 py-4 font-bold">ชื่อพนักงาน / LINE</th>
                 <th className="px-6 py-4 font-bold">รหัสพนักงาน</th>
                 <th className="px-6 py-4 font-bold">แผนก / ตำแหน่ง</th>
                 <th className="px-6 py-4 font-bold">ระดับสิทธิ์</th>
-                <th className="px-6 py-4 font-bold">สถานะ</th>
                 <th className="px-6 py-4 font-bold text-right">จัดการ</th>
               </tr>
             </thead>
@@ -223,7 +292,7 @@ export default function UsersManagementPage() {
               {loading ? (
                 <tr key="loading-row">
                   <td
-                    colSpan={6}
+                    colSpan={5}
                     className="px-6 py-12 text-center text-gray-400"
                   >
                     <div className="flex flex-col items-center justify-center gap-2">
@@ -234,32 +303,64 @@ export default function UsersManagementPage() {
                     </div>
                   </td>
                 </tr>
-              ) : users.length === 0 ? (
+              ) : filteredUsers.length === 0 ? (
                 <tr key="empty-row">
                   <td
-                    colSpan={6}
-                    className="px-6 py-12 text-center text-gray-400 text-sm font-medium"
+                    colSpan={5}
+                    className="px-6 py-12 text-center text-gray-400"
                   >
-                    ไม่พบข้อมูลพนักงานในระบบ
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      {activeTab === "pending" ? (
+                        <ShieldAlert size={32} className="text-gray-300" />
+                      ) : (
+                        <Users size={32} className="text-gray-300" />
+                      )}
+                      <p className="text-sm font-medium mt-2">
+                        {activeTab === "pending"
+                          ? "ไม่มีผู้ใช้งานที่รอการอนุมัติ"
+                          : "ไม่พบข้อมูลพนักงานในระบบ"}
+                      </p>
+                    </div>
                   </td>
                 </tr>
               ) : (
-                users.map((user) => (
+                filteredUsers.map((user) => (
                   <tr
-                    key={user.id}
+                    key={user.id || user.line_user_id}
                     className="hover:bg-blue-50/40 transition-colors group"
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0 uppercase">
-                          {user.first_name ? user.first_name.charAt(0) : "?"}
-                        </div>
+                        {/* 🌟 แสดงรูปภาพจาก LINE ถ้ามี */}
+                        {user.picture_url ? (
+                          <img
+                            src={user.picture_url}
+                            alt="profile"
+                            className="w-10 h-10 rounded-full border border-gray-100 object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0 uppercase">
+                            {user.first_name
+                              ? user.first_name.charAt(0)
+                              : user.display_name
+                                ? user.display_name.charAt(0)
+                                : "?"}
+                          </div>
+                        )}
+
                         <div>
-                          <p className="text-sm font-bold text-gray-900">
-                            {user.first_name || ""} {user.last_name || ""}
+                          <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                            {user.first_name
+                              ? `${user.first_name} ${user.last_name || ""}`
+                              : user.display_name || "ไม่มีชื่อ"}
                             {user.nickname && (
-                              <span className="text-gray-500 font-normal ml-1">
+                              <span className="text-gray-500 font-normal">
                                 ({user.nickname})
+                              </span>
+                            )}
+                            {!user.first_name && user.display_name && (
+                              <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded uppercase">
+                                LINE
                               </span>
                             )}
                           </p>
@@ -271,7 +372,11 @@ export default function UsersManagementPage() {
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm text-gray-600 font-medium">
-                        {user.employee_code || "-"}
+                        {user.employee_code || (
+                          <span className="text-gray-300 italic">
+                            ยังไม่ระบุ
+                          </span>
+                        )}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -297,26 +402,32 @@ export default function UsersManagementPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {user.is_active ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
-                          ใช้งานปกติ
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500 border border-gray-200">
-                          ระงับการใช้งาน
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {activeTab === "pending" ? (
+                          <button
+                            onClick={() => handleApprove(user)}
+                            disabled={
+                              processingId === (user.id || user.line_user_id)
+                            }
+                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold disabled:opacity-50"
+                          >
+                            {processingId === (user.id || user.line_user_id) ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <UserCheck size={14} />
+                            )}
+                            อนุมัติ
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleEdit(user)}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            <Edit size={18} />
+                          </button>
+                        )}
+
                         <button
-                          onClick={() => handleEdit(user)}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        >
-                          <Edit size={18} />
-                        </button>
-                        {/* 🌟 ปุ่มลบพนักงาน */}
-                        <button 
                           onClick={() => handleDeleteClick(user)}
                           className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         >
@@ -334,12 +445,12 @@ export default function UsersManagementPage() {
         {/* Pagination */}
         <div className="p-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-sm text-gray-500 bg-gray-50/30">
           <span className="font-medium">
-            จำนวนพนักงานทั้งหมด {users.length} รายการ
+            จำนวนพนักงานทั้งหมด {filteredUsers.length} รายการ
           </span>
         </div>
       </div>
 
-      {/* 🌟 Slide-over Modal สำหรับฟอร์มพนักงาน (เปลี่ยนเป็น <form>) */}
+      {/* 🌟 Slide-over Modal สำหรับฟอร์มพนักงาน */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[70] flex justify-end">
           <div
@@ -347,7 +458,6 @@ export default function UsersManagementPage() {
             onClick={() => !isSaving && setIsModalOpen(false)}
           />
 
-          {/* 🌟 ครอบด้วย <form> เพื่อใช้งาน onSubmit */}
           <form
             onSubmit={handleSave}
             className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300"
@@ -359,7 +469,7 @@ export default function UsersManagementPage() {
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {editingUser
-                    ? `กำลังแก้ไขข้อมูลของ ${editingUser.first_name}`
+                    ? `กำลังแก้ไขข้อมูลของ ${editingUser.first_name || editingUser.display_name}`
                     : "ระบบจะรอให้พนักงานผูกบัญชี LINE ในภายหลัง"}
                 </p>
               </div>
@@ -372,8 +482,6 @@ export default function UsersManagementPage() {
               </button>
             </div>
 
-            {/* Modal Body */}
-            {/* 🌟 เติมแอตทริบิวต์ name="..." ให้ทุก <input> ตรงกับชื่อคอลัมน์ใน Database */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -522,16 +630,14 @@ export default function UsersManagementPage() {
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="flex-1 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors"
+                className="flex-1 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 ยกเลิก
               </button>
-
-              {/* 🌟 ปุ่มบันทึก (เปลี่ยน type เป็น submit) */}
               <button
                 type="submit"
                 disabled={isSaving}
-                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200 flex items-center justify-center gap-2 disabled:opacity-70"
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200 flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
               >
                 {isSaving ? (
                   <Loader2 size={18} className="animate-spin" />
@@ -545,29 +651,38 @@ export default function UsersManagementPage() {
         </div>
       )}
 
-      {/* 🌟 Popup ยืนยันการลบ (Beautiful Modal) */}
+      {/* 🌟 Popup ยืนยันการลบ */}
       {userToDelete && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center">
-          <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity" onClick={() => setUserToDelete(null)} />
+          <div
+            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
+            onClick={() => setUserToDelete(null)}
+          />
           <div className="relative bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm mx-4 animate-in zoom-in-95 duration-200">
             <div className="flex flex-col items-center text-center">
               <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
                 <AlertTriangle size={28} strokeWidth={2.5} />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">ยืนยันการลบพนักงาน</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                ยืนยันการลบพนักงาน
+              </h3>
               <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                คุณแน่ใจหรือไม่ว่าต้องการลบ <span className="font-bold text-gray-900">{userToDelete.first_name} {userToDelete.last_name}</span> ออกจากระบบ? <br/> การกระทำนี้ไม่สามารถย้อนกลับได้
+                คุณแน่ใจหรือไม่ว่าต้องการลบ{" "}
+                <span className="font-bold text-gray-900">
+                  {userToDelete.first_name || userToDelete.display_name}
+                </span>{" "}
+                ออกจากระบบ? <br /> การกระทำนี้ไม่สามารถย้อนกลับได้
               </p>
               <div className="flex w-full gap-3">
-                <button 
+                <button
                   onClick={() => setUserToDelete(null)}
-                  className="flex-1 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-xl text-sm font-bold transition-colors"
+                  className="flex-1 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-xl text-sm font-bold transition-colors cursor-pointer"
                 >
                   ยกเลิก
                 </button>
-                <button 
+                <button
                   onClick={confirmDelete}
-                  className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow-sm shadow-red-200 transition-colors"
+                  className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow-sm shadow-red-200 transition-colors cursor-pointer"
                 >
                   ใช่, ลบเลย
                 </button>
